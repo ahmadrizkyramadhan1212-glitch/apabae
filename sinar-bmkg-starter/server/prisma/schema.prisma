@@ -1,0 +1,247 @@
+// SINAR BMKG - skema basis data final (MySQL). Sumber kebenaran fitur: docs/SPEC.md
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum LocationType {
+  PHYSICAL // dicek bentrok jadwal
+  ONLINE
+  OTHER
+}
+
+enum SeminarStatus {
+  MENUNGGU_VERIFIKASI
+  DIKEMBALIKAN
+  DIJADWALKAN
+  BERLANGSUNG
+  SELESAI
+  DIBATALKAN
+}
+
+enum FileKind {
+  SURAT_IZIN
+  POSTER
+  LAINNYA
+}
+
+enum PageMode {
+  A4_LANDSCAPE
+  A4_PORTRAIT
+  SQUARE
+  WIDE_16_9
+  AUTO // mengikuti rasio template yang diunggah
+}
+
+enum MailStatus {
+  MENUNGGU
+  TERKIRIM
+  GAGAL
+}
+
+enum EmailType {
+  AKUN_BARU
+  DISETUJUI
+  DIKEMBALIKAN
+  DIBATALKAN
+  SERTIFIKAT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  nip          String   @unique
+  email        String   @unique
+  phone        String?
+  unit         String?
+  role         Role     @default(USER)
+  passwordHash String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  seminars  Seminar[]
+  news      News[]
+  auditLogs AuditLog[]
+}
+
+model Location {
+  id         String       @id @default(cuid())
+  key        String       @unique // auditorium | ruang-rapat | online | lainnya
+  name       String
+  type       LocationType
+  capacity   Int?
+  facilities String?
+
+  seminars Seminar[]
+}
+
+model Seminar {
+  id            String   @id @default(cuid())
+  code          String   @unique // kode pendek untuk nomor sertifikat, contoh "26A7K2"
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  locationId    String
+  location      Location @relation(fields: [locationId], references: [id])
+  locationOther String?
+
+  title     String
+  topic     String?
+  date      DateTime @db.Date
+  startTime String // "09:00" WIB
+  endTime   String // "11:00" WIB
+
+  status         SeminarStatus @default(MENUNGGU_VERIFIKASI)
+  returnReason   String?
+  letterReceived Boolean       @default(false)
+  cancelledBy    Role?
+  cancelledAt    DateTime?
+
+  // absensi
+  attendToken  String  @unique // bagian dari link absensi, acak
+  attendCodeOn Boolean @default(false) // kode hadir 6 digit (opsional)
+  attendCode   String?
+
+  // sertifikat (diatur user setelah seminar selesai)
+  certTemplatePath String?
+  certPageMode     PageMode  @default(A4_LANDSCAPE)
+  certPageRatio    Float?
+  // layout elemen sertifikat (JSON), lihat docs/SPEC.md bagian 6
+  certLayout       Json?
+  certMailSubject  String?
+  certMailBody     String?   @db.Text
+  certGeneratedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  files       SeminarFile[]
+  materials   Material[]
+  attendances Attendance[]
+  news        News?
+
+  @@index([date, locationId])
+  @@index([status])
+  @@index([userId])
+}
+
+model SeminarFile {
+  id           String   @id @default(cuid())
+  seminarId    String
+  seminar      Seminar  @relation(fields: [seminarId], references: [id], onDelete: Cascade)
+  kind         FileKind
+  originalName String
+  storedPath   String
+  mime         String
+  sizeBytes    Int
+  uploadedAt   DateTime @default(now())
+
+  @@index([seminarId])
+}
+
+model Material {
+  id           String   @id @default(cuid())
+  seminarId    String
+  seminar      Seminar  @relation(fields: [seminarId], references: [id], onDelete: Cascade)
+  presenter    String
+  storedPath   String?
+  originalName String?
+  sizeBytes    Int?
+  driveUrl     String?
+  createdAt    DateTime @default(now())
+
+  @@index([seminarId])
+}
+
+model Attendance {
+  id        String   @id @default(cuid())
+  seminarId String
+  seminar   Seminar  @relation(fields: [seminarId], references: [id], onDelete: Cascade)
+  name      String
+  nip       String
+  email     String
+  source    String   @default("QR") // QR | MANUAL
+  createdAt DateTime @default(now())
+
+  certificate Certificate?
+
+  @@unique([seminarId, email])
+  @@unique([seminarId, nip])
+}
+
+model Certificate {
+  id           String     @id @default(cuid())
+  attendanceId String     @unique
+  attendance   Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  number       String     @unique // SERT/BMKG/2026/<code>/001
+  pdfPath      String?
+  mailStatus   MailStatus @default(MENUNGGU)
+  mailError    String?    @db.Text
+  sentAt       DateTime?
+}
+
+model News {
+  id          String   @id @default(cuid())
+  seminarId   String   @unique
+  seminar     Seminar  @relation(fields: [seminarId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+  title       String
+  body        String   @db.Text
+  publishedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  photos NewsPhoto[]
+}
+
+model NewsPhoto {
+  id        String  @id @default(cuid())
+  newsId    String
+  news      News    @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  path      String
+  caption   String?
+  sortOrder Int     @default(0)
+
+  @@index([newsId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  target    String
+  detail    String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Antrean email: diproses node-cron, satu per satu dengan jeda
+model EmailJob {
+  id             String     @id @default(cuid())
+  type           EmailType
+  toEmail        String
+  toName         String?
+  subject        String
+  body           String     @db.Text
+  attachmentPath String?
+  attachmentName String?
+  certificateId  String?
+  status         MailStatus @default(MENUNGGU)
+  attempts       Int        @default(0)
+  lastError      String?    @db.Text
+  nextTryAt      DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+  sentAt         DateTime?
+
+  @@index([status, nextTryAt])
+}

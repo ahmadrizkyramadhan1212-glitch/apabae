@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="id" data-theme="light" data-bg="bergerak">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo-bmkg.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SINAR BMKG — Sistem Informasi Seminar Ilmiah</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    />
+    <script>
+      // Tema & latar diterapkan sebelum render agar tidak berkedip
+      try {
+        var t = localStorage.getItem('sinar.theme')
+        var m = matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.dataset.theme = t || (m ? 'gelap' : 'terang')
+        document.documentElement.dataset.bg = localStorage.getItem('sinar.bg') || 'bergerak'
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
